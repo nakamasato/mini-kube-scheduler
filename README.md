@@ -464,85 +464,147 @@ Clean up finished
 1. Update `minisched/initialize.go`.
 
     1. Add necessary packages.
+        <details>
+
+        ```diff
+         import (
+        +       "fmt"
+        +
+                "github.com/nakamasato/mini-kube-scheduler/minisched/queue"
+                "k8s.io/client-go/informers"
+                clientset "k8s.io/client-go/kubernetes"
+        +       "k8s.io/kubernetes/pkg/scheduler/framework"
+        +       "k8s.io/kubernetes/pkg/scheduler/framework/plugins/nodename"
+         )
+
+        ```
+
+        </details>
+
     1. Add `filterPlugins` https://pkg.go.dev/k8s.io/kubernetes@v1.23.4/pkg/scheduler/framework/plugins/nodename to `Scheduler`.
+        ```diff
+         type Scheduler struct {
+                SchedulingQueue *queue.SchedulingQueue
+
+                client clientset.Interface
+        +
+        +       filterPlugins []framework.FilterPlugin
+         }
+        ```
     1. Change the return value of `New()` to `(*Scheduler, error)`
+
+        <details>
+
+        ```diff
+        -) *Scheduler {
+        +) (*Scheduler, error) {
+        +       filterP, err := createFilterPlugins()
+        +       if err != nil {
+        +               return nil, fmt.Errorf("create filter plugins: %w", err)
+        +       }
+                sched := &Scheduler{
+                        SchedulingQueue: queue.New(),
+                        client:          client,
+        +               filterPlugins:   filterP,
+                }
+
+                addAllEventHandlers(sched, informerFactory)
+
+        -       return sched
+        +       return sched, nil
+        +}
+        ```
+
+        </details>
+
     1. Add `createFilterPlugins()`.
 
-    <details>
+        ```diff
+        +
+        +func createFilterPlugins() ([]framework.FilterPlugin, error) {
+        +       // nodename is FilterPlugin.
+        +       nodenameplugin, err := nodename.New(nil, nil)
+        +       if err != nil {
+        +               return nil, fmt.Errorf("create nodename plugin: %w", err)
+        +       }
+        +
+        +       // We use nodename plugin only.
+        +       filterPlugins := []framework.FilterPlugin{
+        +               nodenameplugin.(framework.FilterPlugin),
+        +       }
+        +
+        +       return filterPlugins, nil
+         }
+        ```
 
-    ```diff
-     import (
-    +       "fmt"
-    +
-            "github.com/nakamasato/mini-kube-scheduler/minisched/queue"
-            "k8s.io/client-go/informers"
-            clientset "k8s.io/client-go/kubernetes"
-    +       "k8s.io/kubernetes/pkg/scheduler/framework"
-    +       "k8s.io/kubernetes/pkg/scheduler/framework/plugins/nodename"
-     )
-
-     type Scheduler struct {
-            SchedulingQueue *queue.SchedulingQueue
-
-            client clientset.Interface
-    +
-    +       filterPlugins []framework.FilterPlugin
-     }
-    -) *Scheduler {
-    +) (*Scheduler, error) {
-    +       filterP, err := createFilterPlugins()
-    +       if err != nil {
-    +               return nil, fmt.Errorf("create filter plugins: %w", err)
-    +       }
-            sched := &Scheduler{
-                    SchedulingQueue: queue.New(),
-                    client:          client,
-    +               filterPlugins:   filterP,
-            }
-
-            addAllEventHandlers(sched, informerFactory)
-
-    -       return sched
-    +       return sched, nil
-    +}
-    +
-    +func createFilterPlugins() ([]framework.FilterPlugin, error) {
-    +       // nodename is FilterPlugin.
-    +       nodenameplugin, err := nodename.New(nil, nil)
-    +       if err != nil {
-    +               return nil, fmt.Errorf("create nodename plugin: %w", err)
-    +       }
-    +
-    +       // We use nodename plugin only.
-    +       filterPlugins := []framework.FilterPlugin{
-    +               nodenameplugin.(framework.FilterPlugin),
-    +       }
-    +
-    +       return filterPlugins, nil
-     }
-    ```
-
-    </details>
 
 1. Update `scheduler/scheduler.go`.
 
-    <details>
+    1. Update `New`'s return.
 
-    ```diff
-    -       sched := minisched.New(
-    +       sched, err := minisched.New(
-                    clientSet,
-                    informerFactory,
-            )
+        <details>
 
-    +       if err != nil {
-    +               cancel()
-    +               return fmt.Errorf("create minisched: %w", err)
-    +       }
-    +
-    ```
+        ```diff
+        -       sched := minisched.New(
+        +       sched, err := minisched.New(
+                        clientSet,
+                        informerFactory,
+                )
 
-    </details>
+        +       if err != nil {
+        +               cancel()
+        +               return fmt.Errorf("create minisched: %w", err)
+        +       }
+        +
+        ```
+
+        </details>
+
+    1. Add `RunFilterPlugins` function.
+
+        For all the `filterPlugins`, `Filter` is called: `status := pl.Filter(ctx, state, pod, nodeInfo)`.
+
+        ```go
+        func (sched *Scheduler) RunFilterPlugins(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodes []v1.Node) ([]*v1.Node, *framework.Status) {
+            feasibleNodes := make([]*v1.Node, len(nodes))
+
+            // TODO: consider about nominated pod
+            statuses := make(framework.PluginToStatus)
+            for _, n := range nodes {
+                nodeInfo := framework.NewNodeInfo()
+                nodeInfo.SetNode(&n)
+                for _, pl := range sched.filterPlugins {
+                    status := pl.Filter(ctx, state, pod, nodeInfo)
+                    if !status.IsSuccess() {
+                        status.SetFailedPlugin(pl.Name())
+                        statuses[pl.Name()] = status
+                        return nil, statuses.Merge()
+                    }
+                    feasibleNodes = append(feasibleNodes, nodeInfo.Node())
+                }
+            }
+
+            return feasibleNodes, statuses.Merge()
+        }
+        ```
+
+    1. Use Filter Plugin in `ScheduleOne`.
+
+        ```go
+        // filter
+        feasibleNodes, status := sched.RunFilterPlugins(ctx, nil, pod, nodes.Items)
+        if !status.IsSuccess() {
+            klog.Error(status.AsError())
+            return
+        }
+        if len(feasibleNodes) == 0 {
+            klog.Info("no fasible nodes for " + pod.Name)
+            return
+        }
+
+        // select node randomly
+        selectedNode := feasibleNodes[rand.Intn(len(nodes.Items))]
+        ```
 
 1. Add `NodeName: "node9",` to `PodSpec` in `sched.go`.
 
@@ -560,6 +622,23 @@ Clean up finished
     ```
 
 ### 2.2. Run
+
+- Nodes: node1~node9
+- FilterPlugin: `NodeName`
+- PodSpec:
+    ```go
+    v1.PodSpec{
+        Containers: []v1.Container{
+            {
+                Name:  "container1",
+                Image: "k8s.gcr.io/pause:3.5",
+            },
+        },
+        // this pod will be bound to node9 with nodename plugin
+        NodeName: "node9",
+    }
+    ```
+- Expect: Pod1 is assigned to `node9`
 
 ```
 make build run
