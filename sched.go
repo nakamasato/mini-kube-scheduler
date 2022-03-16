@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 	"strconv"
 	"time"
 
@@ -13,11 +15,11 @@ import (
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/klog"
 
-	"github.com/nakamasato/mini-kube-scheduler/config"
 	"github.com/nakamasato/mini-kube-scheduler/k8sapiserver"
-	"github.com/nakamasato/mini-kube-scheduler/pvcontroller"
 	"github.com/nakamasato/mini-kube-scheduler/scheduler/defaultconfig"
 )
+
+var ErrEmptyEnv = errors.New("env is needed, but empty")
 
 // entry point.
 func main() {
@@ -28,12 +30,12 @@ func main() {
 
 // start starts scheduler and needed k8s components.
 func start() error {
-	cfg, err := config.NewConfig()
-	if err != nil {
-		return xerrors.Errorf("get config: %w", err)
+	etcdurl := os.Getenv("KUBE_SCHEDULER_SIMULATOR_ETCD_URL")
+	if etcdurl == "" {
+		return xerrors.Errorf("get KUBE_SCHEDULER_SIMULATOR_ETCD_URL from env: %w", ErrEmptyEnv)
 	}
 
-	restclientCfg, apiShutdown, err := k8sapiserver.StartAPIServer(cfg.EtcdURL)
+	restclientCfg, apiShutdown, err := k8sapiserver.StartAPIServer(etcdurl)
 	if err != nil {
 		return xerrors.Errorf("start API server: %w", err)
 	}
@@ -41,11 +43,11 @@ func start() error {
 
 	client := clientset.NewForConfigOrDie(restclientCfg)
 
-	pvshutdown, err := pvcontroller.StartPersistentVolumeController(client)
-	if err != nil {
-		return xerrors.Errorf("start pv controller: %w", err)
-	}
-	defer pvshutdown()
+	// pvshutdown, err := pvcontroller.StartPersistentVolumeController(client)
+	// if err != nil {
+	// 	return xerrors.Errorf("start pv controller: %w", err)
+	// }
+	// defer pvshutdown()
 
 	sched := scheduler.NewSchedulerService(client, restclientCfg)
 
