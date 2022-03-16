@@ -24,6 +24,7 @@ func (s *SchedulingQueue) Add(pod *v1.Pod) {
 
 	s.activeQ = append(s.activeQ, pod)
 	s.lock.Signal()
+	return
 }
 
 func (s *SchedulingQueue) NextPod() *v1.Pod {
