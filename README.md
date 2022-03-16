@@ -33,9 +33,9 @@ Files:
 1. `sched.go`: Run dependency (`apiserver`) and the scheduler within a scenario (create nodes and a pod).
 1. `scheduler`: Scheduler service to manage `minisched`.
 
-## Steps
+## 1. Initial Random Scheduler
 
-### 1. Initialize project
+### 1.1. Initialize project
 
 1. Init module
 
@@ -48,7 +48,7 @@ Files:
     mkdir minisched
     ```
 
-### 2. Create Scheduler
+### 1.2. Create Scheduler
 
 1. Create `SchedulingQueue` in `minisched/queue/queue.go`.
 
@@ -257,7 +257,7 @@ Files:
 
     </details>
 
-### 3. Prepare dependencies
+### 1.3. Prepare dependencies
 
 ```
 K8S_VERSION=1.23.4
@@ -278,7 +278,7 @@ K8S_VERSION=1.23.4
         ```
 1. Run `./update_go_mod.sh` if you get `revision v0.0.0' errors`.
 
-### 4. Run
+### 1.4. Run
 
 ```
 make build run
@@ -456,6 +456,106 @@ Clean up finished
 ```
 
 </details>
+
+## 2. Filter Plugins
+
+1. Update `minisched/initialize.go`.
+
+    1. Add necessary packages.
+    1. Add `filterPlugins` to `Scheduler`.
+    1. Change the return value of `New()` to `(*Scheduler, error)`
+    1. Add `createFilterPlugins()`.
+
+    <details>
+
+    ```diff
+     import (
+    +       "fmt"
+    +
+            "github.com/nakamasato/mini-kube-scheduler/minisched/queue"
+            "k8s.io/client-go/informers"
+            clientset "k8s.io/client-go/kubernetes"
+    +       "k8s.io/kubernetes/pkg/scheduler/framework"
+    +       "k8s.io/kubernetes/pkg/scheduler/framework/plugins/nodename"
+     )
+
+     type Scheduler struct {
+            SchedulingQueue *queue.SchedulingQueue
+
+            client clientset.Interface
+    +
+    +       filterPlugins []framework.FilterPlugin
+     }
+    -) *Scheduler {
+    +) (*Scheduler, error) {
+    +       filterP, err := createFilterPlugins()
+    +       if err != nil {
+    +               return nil, fmt.Errorf("create filter plugins: %w", err)
+    +       }
+            sched := &Scheduler{
+                    SchedulingQueue: queue.New(),
+                    client:          client,
+    +               filterPlugins:   filterP,
+            }
+
+            addAllEventHandlers(sched, informerFactory)
+
+    -       return sched
+    +       return sched, nil
+    +}
+    +
+    +func createFilterPlugins() ([]framework.FilterPlugin, error) {
+    +       // nodename is FilterPlugin.
+    +       nodenameplugin, err := nodename.New(nil, nil)
+    +       if err != nil {
+    +               return nil, fmt.Errorf("create nodename plugin: %w", err)
+    +       }
+    +
+    +       // We use nodename plugin only.
+    +       filterPlugins := []framework.FilterPlugin{
+    +               nodenameplugin.(framework.FilterPlugin),
+    +       }
+    +
+    +       return filterPlugins, nil
+     }
+    ```
+
+    </details>
+
+1. Update `scheduler/scheduler.go`.
+
+    <details>
+
+    ```diff
+    -       sched := minisched.New(
+    +       sched, err := minisched.New(
+                    clientSet,
+                    informerFactory,
+            )
+
+    +       if err != nil {
+    +               cancel()
+    +               return fmt.Errorf("create minisched: %w", err)
+    +       }
+    +
+    ```
+
+    </details>
+
+1. Add `NodeName: "node9",` to `PodSpec` in `sched.go`.
+
+    ```go
+    Spec: v1.PodSpec{
+        Containers: []v1.Container{
+            {
+                Name:  "container1",
+                Image: "k8s.gcr.io/pause:3.5",
+            },
+        },
+        // this pod will be bound to node9 with nodename plugin
+        NodeName: "node9",
+    },
+    ```
 
 ## Tips
 

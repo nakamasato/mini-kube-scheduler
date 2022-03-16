@@ -96,6 +96,8 @@ func scenario(client clientset.Interface) error {
 					Image: "k8s.gcr.io/pause:3.5",
 				},
 			},
+			// this pod will be bound to node9 with nodename plugin
+			NodeName: "node9",
 		},
 	}, metav1.CreateOptions{})
 	if err != nil {

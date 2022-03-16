@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/nakamasato/mini-kube-scheduler/minisched"
 
@@ -12,7 +13,6 @@ import (
 	"k8s.io/klog"
 	v1beta2config "k8s.io/kube-scheduler/config/v1beta2"
 	"k8s.io/kubernetes/pkg/scheduler"
-
 )
 
 // Service manages scheduler.
@@ -53,10 +53,15 @@ func (s *Service) StartScheduler(versionedcfg *v1beta2config.KubeSchedulerConfig
 
 	s.currentSchedulerCfg = versionedcfg.DeepCopy()
 
-	sched := minisched.New(
+	sched, err := minisched.New(
 		clientSet,
 		informerFactory,
 	)
+
+	if err != nil {
+		cancel()
+		return fmt.Errorf("create minisched: %w", err)
+	}
 
 	informerFactory.Start(ctx.Done())
 	informerFactory.WaitForCacheSync(ctx.Done())
