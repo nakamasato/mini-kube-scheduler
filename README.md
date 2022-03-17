@@ -459,7 +459,7 @@ Clean up finished
 
 ## [2. Filter Plugins](https://github.com/nakamasato/mini-kube-scheduler/tree/02-filter-plugins)
 
-### 2.1. Add `NodeName` Filter Plugin
+In this secion, we use [nodename](https://pkg.go.dev/k8s.io/kubernetes@v1.23.4/pkg/scheduler/framework/plugins/nodename) plugin, which is one of the [default plugins](https://pkg.go.dev/k8s.io/kubernetes@v1.23.4/pkg/scheduler/framework/plugins/nodename).
 
 `NodeName` checks if the target pod and node fit, specifically by this code in `Fit` function:
 ```go
@@ -472,6 +472,7 @@ Conditions:
 
 for more detail: [scheduler/framework/plugins/nodename/node_name.go](https://github.com/kubernetes/kubernetes/blob/e6c093d87ea4cbb530a7b2ae91e54c0842d8308a/pkg/scheduler/framework/plugins/nodename/node_name.go#L56-L69)
 
+### 2.1. Add `NodeName` Filter Plugin
 
 1. Update `minisched/initialize.go`.
 
