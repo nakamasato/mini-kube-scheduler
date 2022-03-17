@@ -38,6 +38,7 @@ Files:
 1. [Initial Random Scheduler](https://github.com/nakamasato/mini-kube-scheduler/tree/01-initial-random-scheduler/01-initial-random-scheduler.md)
 1. [Filter Plugins](https://github.com/nakamasato/mini-kube-scheduler/tree/02-filter-plugins/02-filter-plugins.md)
 1. [Score Plugins](https://github.com/nakamasato/mini-kube-scheduler/tree/03-score-plugins/03-score-plugins.md)
+1. [PreScore Plugins](https://github.com/nakamasato/mini-kube-scheduler/tree/04-prescore-plugins/04-prescore-plugins.md)
 
 ## Tips
 
