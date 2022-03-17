@@ -7,7 +7,7 @@ import (
 	"k8s.io/client-go/informers"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
-	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/nodename"
+	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/nodeunschedulable"
 )
 
 type Scheduler struct {
@@ -38,16 +38,37 @@ func New(
 }
 
 func createFilterPlugins() ([]framework.FilterPlugin, error) {
-	// nodename is FilterPlugin.
-	nodenameplugin, err := nodename.New(nil, nil)
+	// nodeunschedulable is FilterPlugin.
+	nodeunschedulableplugin, err := createNodeUnschedulablePlugin()
 	if err != nil {
-		return nil, fmt.Errorf("create nodename plugin: %w", err)
+		return nil, fmt.Errorf("create nodeunschedulable plugin: %w", err)
 	}
 
-	// We use nodename plugin only.
+	// We use nodeunschedulable plugin only.
 	filterPlugins := []framework.FilterPlugin{
-		nodenameplugin.(framework.FilterPlugin),
+		nodeunschedulableplugin.(framework.FilterPlugin),
 	}
 
 	return filterPlugins, nil
+}
+
+// =====
+// initialize plugins
+// =====
+//
+// we only use nodeunschedulable
+
+var (
+	nodeunschedulableplugin framework.Plugin
+)
+
+func createNodeUnschedulablePlugin() (framework.Plugin, error) {
+	if nodeunschedulableplugin != nil {
+		return nodeunschedulableplugin, nil
+	}
+
+	p, err := nodeunschedulable.New(nil, nil)
+	nodeunschedulableplugin = p
+
+	return p, err
 }

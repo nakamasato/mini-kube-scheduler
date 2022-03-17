@@ -10,6 +10,7 @@ import (
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
@@ -33,20 +34,20 @@ func (sched *Scheduler) scheduleOne(ctx context.Context) {
 		return
 	}
 	klog.Info("minischeduler: Got Nodes successfully")
+	klog.Info("minischeduler: got nodes: ", len(nodes.Items))
 
 	// filter
-	feasibleNodes, status := sched.RunFilterPlugins(ctx, nil, pod, nodes.Items)
-	if !status.IsSuccess() {
-		klog.Error(status.AsError())
+	feasibleNodes, err := sched.RunFilterPlugins(ctx, nil, pod, nodes.Items)
+	if err != nil {
+		klog.Error(err)
 		return
 	}
-	if len(feasibleNodes) == 0 {
-		klog.Info("no fasible nodes for " + pod.Name)
-		return
-	}
+	klog.Info("minischeduler: Filtered Nodes successfully")
+	klog.Info("minischeduler: feasibleNodes: ", len(feasibleNodes))
 
 	// select node randomly
-	selectedNode := feasibleNodes[rand.Intn(len(nodes.Items))]
+	rand.Seed(time.Now().UnixNano())
+	selectedNode := feasibleNodes[rand.Intn(len(feasibleNodes))]
 
 	if err := sched.Bind(ctx, pod, selectedNode.Name); err != nil {
 		klog.Error(err)
@@ -69,24 +70,40 @@ func (sched *Scheduler) Bind(ctx context.Context, p *v1.Pod, nodeName string) er
 	return nil
 }
 
-func (sched *Scheduler) RunFilterPlugins(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodes []v1.Node) ([]*v1.Node, *framework.Status) {
-	feasibleNodes := make([]*v1.Node, len(nodes))
+func (sched *Scheduler) RunFilterPlugins(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodes []v1.Node) ([]*v1.Node, error) {
+	feasibleNodes := make([]*v1.Node, 0, len(nodes))
+
+	diagnosis := framework.Diagnosis{
+		NodeToStatusMap:      make(framework.NodeToStatusMap),
+		UnschedulablePlugins: sets.NewString(),
+	}
 
 	// TODO: consider about nominated pod
-	statuses := make(framework.PluginToStatus)
 	for _, n := range nodes {
+		n := n
 		nodeInfo := framework.NewNodeInfo()
 		nodeInfo.SetNode(&n)
+
+		status := framework.NewStatus(framework.Success)
 		for _, pl := range sched.filterPlugins {
-			status := pl.Filter(ctx, state, pod, nodeInfo)
+			status = pl.Filter(ctx, state, pod, nodeInfo)
 			if !status.IsSuccess() {
 				status.SetFailedPlugin(pl.Name())
-				statuses[pl.Name()] = status
-				return nil, statuses.Merge()
+				diagnosis.UnschedulablePlugins.Insert(status.FailedPlugin())
+				break
 			}
+		}
+		if status.IsSuccess() {
 			feasibleNodes = append(feasibleNodes, nodeInfo.Node())
 		}
 	}
 
-	return feasibleNodes, statuses.Merge()
+	if len(feasibleNodes) == 0 {
+		return nil, &framework.FitError{
+			Pod:       pod,
+			Diagnosis: diagnosis,
+		}
+	}
+
+	return feasibleNodes, nil
 }

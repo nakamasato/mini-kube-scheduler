@@ -10,7 +10,7 @@ require (
 	k8s.io/apiserver v0.23.4
 	k8s.io/component-base v0.23.4
 	k8s.io/kube-openapi v0.0.0-20211115234752-e816edb12b65
-	k8s.io/kubernetes v1.23.4
+	k8s.io/kubernetes v1.23.5
 )
 
 require (
