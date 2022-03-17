@@ -16,9 +16,9 @@ type Scheduler struct {
 
 	client clientset.Interface
 
-	filterPlugins []framework.FilterPlugin
-
-	scorePlugins []framework.ScorePlugin
+	filterPlugins   []framework.FilterPlugin
+	preScorePlugins []framework.PreScorePlugin
+	scorePlugins    []framework.ScorePlugin
 }
 
 func New(
@@ -31,6 +31,12 @@ func New(
 		return nil, fmt.Errorf("create filter plugins: %w", err)
 	}
 
+	// prescore plugin
+	preScoreP, err := createPreScorePlugins()
+	if err != nil {
+		return nil, fmt.Errorf("create pre score plugins: %w", err)
+	}
+
 	// score plugin
 	scoreP, err := createScorePlugins()
 	if err != nil {
@@ -41,6 +47,7 @@ func New(
 		SchedulingQueue: queue.New(),
 		client:          client,
 		filterPlugins:   filterP,
+		preScorePlugins: preScoreP,
 		scorePlugins:    scoreP,
 	}
 
@@ -78,8 +85,21 @@ func createNodeUnschedulablePlugin() (framework.Plugin, error) {
 	return p, err
 }
 
+func createPreScorePlugins() ([]framework.PreScorePlugin, error) {
+	nodenumberplugin, err := createNodeNumberPlugin()
+	if err != nil {
+		return nil, fmt.Errorf("create nodenumber plugin: %w", err)
+	}
+
+	// We use nodenumber plugin only.
+	preScorePlugins := []framework.PreScorePlugin{
+		nodenumberplugin.(framework.PreScorePlugin),
+	}
+
+	return preScorePlugins, nil
+}
+
 func createScorePlugins() ([]framework.ScorePlugin, error) {
-	// nodenumber is FilterPlugin.
 	nodenumberplugin, err := createNodeNumberPlugin()
 	if err != nil {
 		return nil, fmt.Errorf("create nodenumber plugin: %w", err)
