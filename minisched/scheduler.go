@@ -2,6 +2,7 @@ package minisched
 
 import (
 	"context"
+	"fmt"
 	"math/rand"
 	"time"
 
@@ -42,14 +43,28 @@ func (sched *Scheduler) scheduleOne(ctx context.Context) {
 		klog.Error(err)
 		return
 	}
-	klog.Info("minischeduler: Filtered Nodes successfully")
-	klog.Info("minischeduler: feasibleNodes: ", len(feasibleNodes))
 
-	// select node randomly
-	rand.Seed(time.Now().UnixNano())
-	selectedNode := feasibleNodes[rand.Intn(len(feasibleNodes))]
+	klog.Info("minischeduler: ran filter plugins successfully")
+	klog.Info("minischeduler: feasible nodes: ", len(feasibleNodes))
 
-	if err := sched.Bind(ctx, pod, selectedNode.Name); err != nil {
+	// score
+	score, status := sched.RunScorePlugins(ctx, nil, pod, feasibleNodes)
+	if !status.IsSuccess() {
+		klog.Error(status.AsError())
+		return
+	}
+
+	klog.Info("minischeduler: ran score plugins successfully")
+	klog.Info("minischeduler: score results", score)
+
+	// select node by score
+	nodeName, err := sched.selectNode(score)
+	if err != nil {
+		klog.Error(err)
+		return
+	}
+
+	if err := sched.Bind(ctx, pod, nodeName); err != nil {
 		klog.Error(err)
 		return
 	}
@@ -96,6 +111,7 @@ func (sched *Scheduler) RunFilterPlugins(ctx context.Context, state *framework.C
 		if status.IsSuccess() {
 			feasibleNodes = append(feasibleNodes, nodeInfo.Node())
 		}
+
 	}
 
 	if len(feasibleNodes) == 0 {
@@ -106,4 +122,69 @@ func (sched *Scheduler) RunFilterPlugins(ctx context.Context, state *framework.C
 	}
 
 	return feasibleNodes, nil
+}
+
+func (sched *Scheduler) RunScorePlugins(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodes []*v1.Node) (framework.NodeScoreList, *framework.Status) {
+	scoresMap := sched.createPluginToNodeScores(nodes)
+
+	for index, n := range nodes {
+		for _, pl := range sched.scorePlugins {
+			score, status := pl.Score(ctx, state, pod, n.Name)
+			klog.Infof("ScorePlugin: %s, pod: %s, node: %s, score: %d", pl.Name(), pod.Name, n.Name, score)
+			if !status.IsSuccess() {
+				return nil, status
+			}
+			scoresMap[pl.Name()][index] = framework.NodeScore{
+				Name:  n.Name,
+				Score: score,
+			}
+		}
+	}
+
+	// TODO: plugin weight & normalizeScore
+
+	result := make(framework.NodeScoreList, 0, len(nodes))
+	for i := range nodes {
+		result = append(result, framework.NodeScore{Name: nodes[i].Name, Score: 0})
+		for j := range scoresMap {
+			result[i].Score += scoresMap[j][i].Score
+		}
+	}
+
+	return result, nil
+}
+
+// Select the Node with highest score from NodeScoreList and return the node name
+func (sched *Scheduler) selectNode(nodeScoreList framework.NodeScoreList) (string, error) {
+	if len(nodeScoreList) == 0 {
+		return "", fmt.Errorf("empty priorityList")
+	}
+	maxScore := nodeScoreList[0].Score
+	selectedNodeName := nodeScoreList[0].Name
+	cntOfMaxScore := 1
+	for _, ns := range nodeScoreList[1:] {
+		if ns.Score > maxScore {
+			maxScore = ns.Score
+			selectedNodeName = ns.Name
+			cntOfMaxScore = 1
+		} else if ns.Score == maxScore {
+			cntOfMaxScore++
+			if rand.Intn(cntOfMaxScore) == 0 {
+				// Replace the candidate with probability of 1/cntOfMaxScore
+				selectedNodeName = ns.Name
+			}
+		}
+	}
+	return selectedNodeName, nil
+}
+
+// Initialize a PluginToNodeScores (map of NodeScoreList for each node) for each scorePlugins.
+// PluginToNodeScore(pluginName -> NodeScoreList(each element for each node))
+func (sched *Scheduler) createPluginToNodeScores(nodes []*v1.Node) framework.PluginToNodeScores {
+	pluginToNodeScores := make(framework.PluginToNodeScores, len(sched.scorePlugins))
+	for _, pl := range sched.scorePlugins {
+		pluginToNodeScores[pl.Name()] = make(framework.NodeScoreList, len(nodes))
+	}
+
+	return pluginToNodeScores
 }

@@ -72,8 +72,8 @@ func start() error {
 func scenario(client clientset.Interface) error {
 	ctx := context.Background()
 
-	// create node0 ~ node9, all nodes are unschedulable
-	for i := 0; i < 10; i++ {
+	// create node0 ~ node5, all nodes are unschedulable
+	for i := 0; i < 5; i++ {
 		suffix := strconv.Itoa(i)
 		_, err := client.CoreV1().Nodes().Create(ctx, &v1.Node{
 			ObjectMeta: metav1.ObjectMeta{
@@ -88,21 +88,41 @@ func scenario(client clientset.Interface) error {
 		}
 	}
 
-	// node10 is not unschedulable
-	_, err := client.CoreV1().Nodes().Create(ctx, &v1.Node{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "node10",
-		},
-		Spec: v1.NodeSpec{},
-	}, metav1.CreateOptions{})
-	if err != nil {
-		return fmt.Errorf("create node: %w", err)
+	// create node5 ~ node9, without unschedulable
+	for i := 5; i < 10; i++ {
+		suffix := strconv.Itoa(i)
+		_, err := client.CoreV1().Nodes().Create(ctx, &v1.Node{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "node" + suffix,
+			},
+			Spec: v1.NodeSpec{},
+		}, metav1.CreateOptions{})
+		if err != nil {
+			return fmt.Errorf("create node: %w", err)
+		}
 	}
 
 	klog.Info("scenario: all nodes created")
 
-	_, err = client.CoreV1().Pods("default").Create(ctx, &v1.Pod{
+	_, err := client.CoreV1().Pods("default").Create(ctx, &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Name: "pod1"},
+		Spec: v1.PodSpec{
+			Containers: []v1.Container{
+				{
+					Name:  "container1",
+					Image: "k8s.gcr.io/pause:3.5",
+				},
+			},
+		},
+	}, metav1.CreateOptions{})
+	if err != nil {
+		return fmt.Errorf("create pod: %w", err)
+	}
+
+	klog.Info("scenario: pod1 created")
+
+	_, err = client.CoreV1().Pods("default").Create(ctx, &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "pod8"},
 		Spec: v1.PodSpec{
 			Containers: []v1.Container{
 				{
@@ -127,6 +147,13 @@ func scenario(client clientset.Interface) error {
 	}
 
 	klog.Info("scenario: pod1 is bound to " + pod.Spec.NodeName)
+
+	pod, err = client.CoreV1().Pods("default").Get(ctx, "pod8", metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("get pod: %w", err)
+	}
+
+	klog.Info("scenario: pod8 is bound to " + pod.Spec.NodeName)
 
 	return nil
 }
