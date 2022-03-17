@@ -459,7 +459,19 @@ Clean up finished
 
 ## [2. Filter Plugins](https://github.com/nakamasato/mini-kube-scheduler/tree/02-filter-plugins)
 
-### 2.1. Add Nodename Filter Plugin
+### 2.1. Add `NodeName` Filter Plugin
+
+`NodeName` checks if the target pod and node fit, specifically by this code in `Fit` function:
+```go
+len(pod.Spec.NodeName) == 0 || pod.Spec.NodeName == nodeInfo.Node().Name
+```
+
+Conditions:
+- True if `NodeName` isn't set in the Pod
+- True if `NodeName` is set in the Pod and same as the target Node's name
+
+for more detail: [scheduler/framework/plugins/nodename/node_name.go](https://github.com/kubernetes/kubernetes/blob/e6c093d87ea4cbb530a7b2ae91e54c0842d8308a/pkg/scheduler/framework/plugins/nodename/node_name.go#L56-L69)
+
 
 1. Update `minisched/initialize.go`.
 
@@ -623,7 +635,7 @@ Clean up finished
 
 ### 2.2. Run
 
-- Nodes: node1~node9
+- Nodes: node0~node9
 - FilterPlugin: `NodeName`
 - PodSpec:
     ```go
