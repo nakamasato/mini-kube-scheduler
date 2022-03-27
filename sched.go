@@ -88,21 +88,7 @@ func scenario(client clientset.Interface) error {
 		}
 	}
 
-	// create node5 ~ node9, without unschedulable
-	for i := 5; i < 10; i++ {
-		suffix := strconv.Itoa(i)
-		_, err := client.CoreV1().Nodes().Create(ctx, &v1.Node{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "node" + suffix,
-			},
-			Spec: v1.NodeSpec{},
-		}, metav1.CreateOptions{})
-		if err != nil {
-			return fmt.Errorf("create node: %w", err)
-		}
-	}
-
-	klog.Info("scenario: all nodes created")
+	klog.Info("scenario: unschedulable nodes created")
 
 	_, err := client.CoreV1().Pods("default").Create(ctx, &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Name: "pod1"},
@@ -136,7 +122,24 @@ func scenario(client clientset.Interface) error {
 		return fmt.Errorf("create pod: %w", err)
 	}
 
-	klog.Info("scenario: pod1 created")
+	klog.Info("scenario: pod8 created")
+
+	// create node5 ~ node9, without unschedulable
+	for i := 5; i < 10; i++ {
+		suffix := strconv.Itoa(i)
+		nodeName := "node" + suffix
+		_, err := client.CoreV1().Nodes().Create(ctx, &v1.Node{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: nodeName,
+			},
+			Spec: v1.NodeSpec{},
+		}, metav1.CreateOptions{})
+		if err != nil {
+			return fmt.Errorf("create node: %w", err)
+		}
+		klog.Infof("scenario: created node: %s", nodeName)
+	}
+	klog.Info("scenario: schedulable nodes created")
 
 	// wait to schedule
 	time.Sleep(10 * time.Second)

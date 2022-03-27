@@ -20,10 +20,13 @@ type SchedulingQueue struct {
 	clusterEventMap map[framework.ClusterEvent]sets.String
 }
 
-func New() *SchedulingQueue {
+func New(clusterEventMap map[framework.ClusterEvent]sets.String) *SchedulingQueue {
 	return &SchedulingQueue{
-		activeQ: []*framework.QueuedPodInfo{},
-		lock:    sync.NewCond(&sync.Mutex{}),
+		activeQ:         []*framework.QueuedPodInfo{},
+		podBackoffQ:     []*framework.QueuedPodInfo{},
+		unschedulableQ:  map[string]*framework.QueuedPodInfo{},
+		clusterEventMap: clusterEventMap,
+		lock:            sync.NewCond(&sync.Mutex{}),
 	}
 }
 
@@ -35,7 +38,6 @@ func (s *SchedulingQueue) Add(pod *v1.Pod) {
 
 	s.activeQ = append(s.activeQ, podInfo)
 	s.lock.Signal()
-	return
 }
 
 func (s *SchedulingQueue) NextPod() *v1.Pod {
@@ -128,10 +130,13 @@ func (s *SchedulingQueue) movePodsToActiveOrBackoffQueue(podInfoList []*framewor
 		}
 
 		if isPodBackingoff(pInfo) {
+			klog.Infof("queue: add Pod(%s) to podBackoffQ", pInfo.Pod.Name)
 			s.podBackoffQ = append(s.podBackoffQ, pInfo)
 		} else {
+			klog.Infof("queue: add Pod(%s) to activeQ", pInfo.Pod.Name)
 			s.activeQ = append(s.activeQ, pInfo)
 		}
+		klog.Infof("queue: remove Pod(%s) from unschedulableQ", pInfo.Pod.Name)
 		delete(s.unschedulableQ, keyFunc(pInfo))
 	}
 }
@@ -152,6 +157,7 @@ func intersect(x, y sets.String) bool {
 // If this returns true, the pod should not be re-tried.
 func isPodBackingoff(podInfo *framework.QueuedPodInfo) bool {
 	boTime := getBackoffTime(podInfo)
+	klog.Infof("queue: Pod: %s, backoff time: %s, now: %s", podInfo.Pod.Name, boTime, time.Now())
 	return boTime.After(time.Now())
 }
 
@@ -163,7 +169,7 @@ func getBackoffTime(podInfo *framework.QueuedPodInfo) time.Time {
 }
 
 const (
-	podInitialBackoffDuration = 1 * time.Second
+	podInitialBackoffDuration = 3 * time.Second
 	podMaxBackoffDuration     = 10 * time.Second
 )
 
