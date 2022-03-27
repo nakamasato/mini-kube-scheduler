@@ -139,7 +139,7 @@ func scenario(client clientset.Interface) error {
 	klog.Info("scenario: pod1 created")
 
 	// wait to schedule
-	time.Sleep(4 * time.Second)
+	time.Sleep(10 * time.Second)
 
 	pod, err := client.CoreV1().Pods("default").Get(ctx, "pod1", metav1.GetOptions{})
 	if err != nil {
