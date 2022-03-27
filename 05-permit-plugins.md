@@ -28,7 +28,7 @@ type PermitPlugin interface {
 
 In this example, we'll implement `PermitPlugin` in `NodeNumber` to delay scheduling Pod `<NodeSuffixNumber>` seconds (e.g. `node9` -> 9 seconds).
 
-![](permitplugin.drawio.svg)
+![](05-permit-plugins.drawio.svg)
 
 1. All the `Permit` plugins are registered in `Scheduler.permitPlugins` in `New()` when initalizing `Scheduler`.
 1. `ScheduleOne()` is called for a newly created unscheduled Pod.
