@@ -6,8 +6,10 @@ import (
 	"math/rand"
 	"time"
 
+	"github.com/nakamasato/mini-kube-scheduler/minisched/waitingpod"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
@@ -74,12 +76,55 @@ func (sched *Scheduler) scheduleOne(ctx context.Context) {
 		return
 	}
 
-	if err := sched.Bind(ctx, pod, nodeName); err != nil {
-		klog.Error(err)
+	status = sched.RunPermitPlugins(ctx, state, pod, nodeName)
+	if status.Code() != framework.Wait && !status.IsSuccess() {
+		klog.Error(status.AsError())
 		return
 	}
 
-	klog.Info("minischeduler: Bind Pod successfully")
+	go func() {
+		ctx := ctx
+
+		status := sched.WaitOnPermit(ctx, pod)
+		if !status.IsSuccess() {
+			klog.Error(status.AsError())
+			return
+		}
+
+		if err := sched.Bind(ctx, pod, nodeName); err != nil {
+			klog.Error(err)
+			return
+		}
+		klog.Info("minischeduler: Bind Pod successfully")
+	}()
+}
+
+// WaitOnPermit will block, if the pod is a waiting pod, until the waiting pod is rejected or allowed.
+func (sched *Scheduler) WaitOnPermit(ctx context.Context, pod *v1.Pod) *framework.Status {
+	waitingPod := sched.waitingPods[pod.UID]
+	if waitingPod == nil {
+		return nil
+	}
+	defer delete(sched.waitingPods, pod.UID)
+
+	klog.Info("minischeduler: Pod waiting on permit. pod: ", klog.KObj(pod))
+
+	s := waitingPod.GetSignal()
+	klog.Info("minischeduler: Successfully got signal from waitingPod. pod: ", klog.KObj(pod))
+
+	if !s.IsSuccess() {
+		if s.IsUnschedulable() {
+			klog.Info("minischeduler: Pod rejected while waiting on permit. pod:", klog.KObj(pod), ", status: ", s.Message())
+
+			s.SetFailedPlugin(s.FailedPlugin())
+			return s
+		}
+
+		err := s.AsError()
+		klog.ErrorS(err, "minischeduler: Failed waiting on permit for pod", "pod", klog.KObj(pod))
+		return framework.AsStatus(fmt.Errorf("minischeduler: waiting on permit for pod: %w", err)).WithFailedPlugin(s.FailedPlugin())
+	}
+	return nil
 }
 
 func (sched *Scheduler) Bind(ctx context.Context, p *v1.Pod, nodeName string) error {
@@ -175,6 +220,44 @@ func (sched *Scheduler) RunScorePlugins(ctx context.Context, state *framework.Cy
 	return result, nil
 }
 
+func (sched *Scheduler) RunPermitPlugins(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeName string) (status *framework.Status) {
+	pluginsWaitTime := make(map[string]time.Duration)
+	statusCode := framework.Success
+	for _, pl := range sched.permitPlugins {
+		status, timeout := pl.Permit(ctx, state, pod, nodeName)
+		if !status.IsSuccess() {
+			// reject
+			if status.IsUnschedulable() {
+				klog.InfoS("PermitPlugins: Pod rejected by permit plugin", "pod", klog.KObj(pod), "plugin", pl.Name(), "status", status.Message())
+				status.SetFailedPlugin(pl.Name())
+				return status
+			}
+
+			// wait
+			if status.Code() == framework.Wait {
+				pluginsWaitTime[pl.Name()] = timeout
+				statusCode = framework.Wait
+				continue
+			}
+
+			// other errors
+			err := status.AsError()
+			klog.ErrorS(err, "PermitPlugins: Failed running Permit plugin", "plugin", pl.Name(), "pod", klog.KObj(pod))
+			return framework.AsStatus(fmt.Errorf("running Permit plugin %q: %w", pl.Name(), err)).WithFailedPlugin(pl.Name())
+		}
+	}
+
+	if statusCode == framework.Wait {
+		waitingPod := waitingpod.NewWaitingPod(pod, pluginsWaitTime)
+		sched.waitingPods[pod.UID] = waitingPod
+		msg := fmt.Sprintf("PermitPlugins: one or more plugins asked to wait and no plugin rejected pod %q", pod.Name)
+		klog.Info("PermitPlugins: One or more plugins asked to wait and no plugin rejected pod. pod: ", klog.KObj(pod))
+		return framework.NewStatus(framework.Wait, msg)
+	}
+
+	return nil
+}
+
 // Select the Node with highest score from NodeScoreList and return the node name
 func (sched *Scheduler) selectNode(nodeScoreList framework.NodeScoreList) (string, error) {
 	if len(nodeScoreList) == 0 {
@@ -208,4 +291,8 @@ func (sched *Scheduler) createPluginToNodeScores(nodes []*v1.Node) framework.Plu
 	}
 
 	return pluginToNodeScores
+}
+
+func (sched *Scheduler) GetWaitingPod(uid types.UID) *waitingpod.WaitingPod {
+	return sched.waitingPods[uid]
 }
