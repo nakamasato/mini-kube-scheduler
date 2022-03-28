@@ -121,3 +121,10 @@ func (pl *NodeNumber) ScoreExtensions() framework.ScoreExtensions {
 func New(_ runtime.Object, h waitingpod.Handle) (framework.Plugin, error) {
 	return &NodeNumber{h: h}, nil
 }
+
+// To implement EnqueueExtensions
+func (pl *NodeNumber) EventsToRegister() []framework.ClusterEvent {
+	return []framework.ClusterEvent{
+		{Resource: framework.Node, ActionType: framework.Add},
+	}
+}

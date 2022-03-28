@@ -41,6 +41,7 @@ Files:
 1. [PreScore Plugins](https://github.com/nakamasato/mini-kube-scheduler/tree/04-prescore-plugins/04-prescore-plugins.md)
 1. [Permit Plugins](https://github.com/nakamasato/mini-kube-scheduler/tree/05-permit-plugins/05-permit-plugins.md)
 1. [Scheduling Queue](https://github.com/nakamasato/mini-kube-scheduler/tree/06-scheduling-queue/06-scheduling-queue.md)
+1. [Event Handler](https://github.com/nakamasato/mini-kube-scheduler/tree/07-event-handler/07-event-handler.md)
 
 ## Tips
 

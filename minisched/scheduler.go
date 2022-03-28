@@ -45,6 +45,7 @@ func (sched *Scheduler) scheduleOne(ctx context.Context) {
 	feasibleNodes, err := sched.RunFilterPlugins(ctx, nil, pod, nodes.Items)
 	if err != nil {
 		klog.Error(err)
+		sched.ErrorFunc(pod, err)
 		return
 	}
 

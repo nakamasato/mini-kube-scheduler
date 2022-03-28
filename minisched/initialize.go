@@ -7,6 +7,7 @@ import (
 	"github.com/nakamasato/mini-kube-scheduler/minisched/queue"
 	"github.com/nakamasato/mini-kube-scheduler/minisched/waitingpod"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/informers"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
@@ -31,9 +32,8 @@ func New(
 	informerFactory informers.SharedInformerFactory,
 ) (*Scheduler, error) {
 	sched := &Scheduler{
-		SchedulingQueue: queue.New(),
-		client:          client,
-		waitingPods:     map[types.UID]*waitingpod.WaitingPod{},
+		client:      client,
+		waitingPods: map[types.UID]*waitingpod.WaitingPod{},
 	}
 
 	// filter plugin
@@ -64,7 +64,14 @@ func New(
 	}
 	sched.permitPlugins = permitP
 
-	addAllEventHandlers(sched, informerFactory)
+	events, err := eventsToRegister(sched)
+	if err != nil {
+		return nil, fmt.Errorf("create gvks: %w", err)
+	}
+
+	sched.SchedulingQueue = queue.New(events)
+
+	addAllEventHandlers(sched, informerFactory, unionedGVKs(events))
 
 	return sched, nil
 }
@@ -154,4 +161,45 @@ func createPermitPlugins(h waitingpod.Handle) ([]framework.PermitPlugin, error) 
 	}
 
 	return permitPlugins, nil
+}
+
+func eventsToRegister(h waitingpod.Handle) (map[framework.ClusterEvent]sets.String, error) {
+	unschedulablePlugin, err := createNodeUnschedulablePlugin()
+	if err != nil {
+		return nil, fmt.Errorf("create node unschedulable plugin: %w", err)
+	}
+	nnumberPlugin, err := createNodeNumberPlugin(h)
+	if err != nil {
+		return nil, fmt.Errorf("create node number plugin: %w", err)
+	}
+
+	clusterEventMap := make(map[framework.ClusterEvent]sets.String)
+	nunschedulablePluginEvents := unschedulablePlugin.(framework.EnqueueExtensions).EventsToRegister()
+	registerClusterEvents(unschedulablePlugin.Name(), clusterEventMap, nunschedulablePluginEvents)
+	nnumberPluginEvents := nnumberPlugin.(framework.EnqueueExtensions).EventsToRegister()
+	registerClusterEvents(unschedulablePlugin.Name(), clusterEventMap, nnumberPluginEvents)
+
+	return clusterEventMap, nil
+}
+
+func registerClusterEvents(name string, eventToPlugins map[framework.ClusterEvent]sets.String, evts []framework.ClusterEvent) {
+	for _, evt := range evts {
+		if eventToPlugins[evt] == nil {
+			eventToPlugins[evt] = sets.NewString(name)
+		} else {
+			eventToPlugins[evt].Insert(name)
+		}
+	}
+}
+
+func unionedGVKs(m map[framework.ClusterEvent]sets.String) map[framework.GVK]framework.ActionType {
+	gvkMap := make(map[framework.GVK]framework.ActionType)
+	for evt := range m {
+		if _, ok := gvkMap[evt.Resource]; ok {
+			gvkMap[evt.Resource] |= evt.ActionType
+		} else {
+			gvkMap[evt.Resource] = evt.ActionType
+		}
+	}
+	return gvkMap
 }

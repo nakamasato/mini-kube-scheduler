@@ -4,6 +4,7 @@ test:
 
 .PHONY: build
 build:
+	go fmt ./...
 	go build -o ./bin/sched ./sched.go
 
 .PHONY: run
