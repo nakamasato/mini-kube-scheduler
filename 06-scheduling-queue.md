@@ -1,6 +1,6 @@
 ## [6. Scheduling Queue](https://github.com/nakamasato/mini-kube-scheduler/tree/06-scheduling-queue)
 
-In this example, we'll enable our scheduling queue to handle failure of scheduling Pods.
+In this example, we'll enable our scheduling queue to handle failure of scheduling Pods. Actual implementation of retry will be completed in the next section.
 
 A Pod will remain unscheduled once it's failed to schedule. Ideally we should try to reschedule the failed Pod some time later.
 
@@ -122,7 +122,7 @@ func (sched *Scheduler) ErrorFunc(pod *v1.Pod, err error) {
 }
 ```
 
-### 6.3 Add `AddUnschedulable` to [minisched/queue/queue.go](queue.go)
+### 6.3. Add `AddUnschedulable` to [minisched/queue/queue.go](queue.go)
 
 ```go
 func (s *SchedulingQueue) AddUnschedulable(pInfo *framework.QueuedPodInfo) error {
@@ -143,4 +143,38 @@ func keyFunc(pInfo *framework.QueuedPodInfo) string {
 	return pInfo.Pod.Name + "_" + pInfo.Pod.Namespace
 }
 ```
-At this point, failed Pods are put back to `unschedulableQ`. In the next section, we'll implement move the items in `unschedulableQ` to `activeQ` or `podBackoffQ` to try scheduling again.
+
+### 6.4. Add necessary functions to `SchedulingQueue`
+
+Add `clusterEventMap` to `SchedulingQueue` struct.
+
+```diff
+@@ -16,6 +16,8 @@ type SchedulingQueue struct {
+        unschedulableQ map[string]*framework.QueuedPodInfo
+
+        lock *sync.Cond
++
++       clusterEventMap map[framework.ClusterEvent]sets.String
+ }
+```
+
+Add the following functions:
+1. `podMatchesEvent`:
+    1. Receive `QueuedPodInfo` and `ClusterEvent`
+    1. True
+        1. `clusterEvent.IsWildCard()`
+        1. Same resource, ActionType != 0 or event.IsWildCard() + `nameSet` and `UnscheduledPlugins` match for each evt and nameSet in `clusterEventMap`
+1. `MoveAllToActiveOrBackoffQueue`: Create `unschedulablePods` by putting all the `QueuedPodInfo` from `unschedulableQ` and call `movePodsToActiveOrBackoffQueue` with the event (`ClusterEvent`).
+1. `movePodsToActiveOrBackoffQueue`:
+    1. Skip if `UnschedulablePlugins` exists and `podMatchesEvent` is not true
+    1. If `isPodBackingoff` -> add podInfo to `s.podBackoffQ`.
+    1. Else -> Add to `s.activeQ`.
+    1. Delete the item from `s.unschedulableQ`.
+1. `intersect`: Return true if there is intersection in the two given sets.
+1. `isPodBackingoff`: Return true if the backoff time hasn't come yet.
+1. `getBackoffTime`: Return backoff time.
+1. `calculateBackoffDuration`: initial backoff duration + Attemps * duration with upper bound `podMaxBackoffDuration`.
+
+At this point, failed Pods are put back to `unschedulableQ` and implemented `MoveAllToActiveOrBackoffQueue` to move the items to either `activeQ` or `podBackoffQ` based on the backoff time of the target pod.
+
+In the next section, we'll update the event handler to trigger `MoveAllToActiveOrBackoffQueue` for specific events.
