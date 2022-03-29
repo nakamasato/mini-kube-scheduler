@@ -43,7 +43,7 @@ Files:
 1. [Permit Plugins](https://github.com/nakamasato/mini-kube-scheduler/tree/05-permit-plugins/05-permit-plugins.md): Delay n seconds based on the name of the node.
 1. [Scheduling Queue](https://github.com/nakamasato/mini-kube-scheduler/tree/06-scheduling-queue/06-scheduling-queue.md): Make the simple queue closer to the one used in `kube-scheduler`. (`podBackoffQ` and `UnschedulableQ` + Logic to put back a queue)
 1. [Event Handler](https://github.com/nakamasato/mini-kube-scheduler/tree/07-event-handler/07-event-handler.md): Trigger `MoveAllToActiveOrBackoffQueue` when a new node is added.
-1. [Flush Queue](https://github.com/nakamasato/mini-kube-scheduler/tree/08-flush-queue/08-flush-queue.md)
+1. [Flush Queue](https://github.com/nakamasato/mini-kube-scheduler/tree/08-flush-queue/08-flush-queue.md): Flush `podBackoffQ` and `UnschedulableQ` periodically.
 
 ## Tips
 
