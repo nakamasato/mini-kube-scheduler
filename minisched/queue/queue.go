@@ -6,6 +6,7 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
@@ -18,6 +19,7 @@ type SchedulingQueue struct {
 	lock *sync.Cond
 
 	clusterEventMap map[framework.ClusterEvent]sets.String
+	stop            chan struct{}
 }
 
 func New(clusterEventMap map[framework.ClusterEvent]sets.String) *SchedulingQueue {
@@ -27,7 +29,20 @@ func New(clusterEventMap map[framework.ClusterEvent]sets.String) *SchedulingQueu
 		unschedulableQ:  map[string]*framework.QueuedPodInfo{},
 		clusterEventMap: clusterEventMap,
 		lock:            sync.NewCond(&sync.Mutex{}),
+		stop:            make(chan struct{}),
 	}
+}
+
+// Run starts the goroutine to pump from podBackoffQ to activeQ
+func (s *SchedulingQueue) Run() {
+	go wait.Until(s.flushBackoffQCompleted, 1*time.Second, s.stop)
+	go wait.Until(s.flushUnschedulablePodsLeftover, 1*time.Second, s.stop) // originally 30 sec
+}
+
+func (s *SchedulingQueue) Close() {
+	s.lock.L.Lock()
+	defer s.lock.L.Unlock()
+	close(s.stop)
 }
 
 func (s *SchedulingQueue) Add(pod *v1.Pod) {
@@ -37,14 +52,16 @@ func (s *SchedulingQueue) Add(pod *v1.Pod) {
 	podInfo := s.newQueuedPodInfo(pod)
 
 	s.activeQ = append(s.activeQ, podInfo)
-	s.lock.Signal()
+	s.lock.Signal() // Awaken wait
 }
 
 func (s *SchedulingQueue) NextPod() *v1.Pod {
 	// wait
 	s.lock.L.Lock()
 	for len(s.activeQ) == 0 {
+		klog.Info("NextPod: waiting")
 		s.lock.Wait()
+		klog.Info("NextPod: awoken")
 	}
 
 	p := s.activeQ[0]
@@ -169,9 +186,12 @@ func getBackoffTime(podInfo *framework.QueuedPodInfo) time.Time {
 }
 
 const (
-	podInitialBackoffDuration = 3 * time.Second
-	podMaxBackoffDuration     = 10 * time.Second
+	podInitialBackoffDuration         = 1 * time.Second
+	podMaxBackoffDuration             = 10 * time.Second
+	podMaxInUnschedulablePodsDuration = 5 * time.Minute
 )
+
+var UnschedulableTimeout = framework.ClusterEvent{Resource: framework.WildCard, ActionType: framework.All, Label: "UnschedulableTimeout"}
 
 // calculateBackoffDuration is a helper function for calculating the backoffDuration
 // based on the number of attempts the pod has made.
@@ -185,4 +205,56 @@ func calculateBackoffDuration(podInfo *framework.QueuedPodInfo) time.Duration {
 		duration += duration
 	}
 	return duration
+}
+
+// flushBackoffQCompleted Moves all pods from backoffQ which have completed backoff in to activeQ
+func (s *SchedulingQueue) flushBackoffQCompleted() {
+	s.lock.L.Lock()
+	defer s.lock.L.Unlock()
+	for {
+		if len(s.podBackoffQ) == 0 {
+			break
+		}
+
+		podBackoffQLen := len(s.podBackoffQ)
+		queuedPodInfo := s.podBackoffQ[0] // Get item
+		s.podBackoffQ = s.podBackoffQ[1:] // Remove the first item
+		klog.Infof("flushBackoffQCompleted: podBackOffQ: %d -> %d", podBackoffQLen, len(s.podBackoffQ))
+		if queuedPodInfo == nil {
+			klog.Info("flushBackoffQCompleted: queuedPodInfo is nil")
+			break
+		}
+
+		boTime := getBackoffTime(queuedPodInfo)
+		if boTime.After(time.Now()) {
+			s.podBackoffQ = append(s.podBackoffQ, queuedPodInfo) // Put to the last
+			klog.Infof("flushBackoffQCompleted: put pod(%s) back to podBackoffQ (backoffTime: %s, now: %s)", queuedPodInfo.Pod.Name, boTime, time.Now())
+			break
+		} else {
+			s.activeQ = append(s.activeQ, queuedPodInfo)
+			s.lock.Signal() // awaken Wait() in NextPod()
+			klog.Infof("flushBackoffQCompleted: added pod(%s) to activeQ", queuedPodInfo.Pod.Name)
+		}
+	}
+}
+
+// flushUnschedulablePodsLeftover moves pods which stay in unschedulableQ
+// longer than podMaxInUnschedulablePodsDuration to backoffQ or activeQ.
+func (s *SchedulingQueue) flushUnschedulablePodsLeftover() {
+	s.lock.L.Lock()
+	defer s.lock.L.Unlock()
+
+	var podsToMove []*framework.QueuedPodInfo
+	currentTime := time.Now()
+	for _, pInfo := range s.unschedulableQ {
+		lastScheduleTime := pInfo.Timestamp
+		if currentTime.Sub(lastScheduleTime) > podMaxInUnschedulablePodsDuration {
+			podsToMove = append(podsToMove, pInfo)
+		}
+	}
+
+	if len(podsToMove) > 0 {
+		s.movePodsToActiveOrBackoffQueue(podsToMove, UnschedulableTimeout)
+		klog.Infof("flushUnschedulablePodsLeftover: movePodsToActiveOrBackoffQueue  podsToMove: %d", len(podsToMove))
+	}
 }

@@ -22,11 +22,13 @@ func init() {
 }
 
 func (sched *Scheduler) Run(ctx context.Context) {
+	sched.SchedulingQueue.Run()
 	wait.UntilWithContext(ctx, sched.scheduleOne, 0)
+	sched.SchedulingQueue.Close()
 }
 
 func (sched *Scheduler) scheduleOne(ctx context.Context) {
-	klog.Info("minischeduler: Try to get pod from queue....")
+	klog.Info("minischeduler: Try to get pod from activeQ")
 	pod := sched.SchedulingQueue.NextPod()
 	klog.Info("minischeduler: Start schedule(" + pod.Name + ")")
 

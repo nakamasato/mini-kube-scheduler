@@ -141,22 +141,39 @@ func scenario(client clientset.Interface) error {
 	}
 	klog.Info("scenario: schedulable nodes created")
 
-	// wait to schedule
-	time.Sleep(10 * time.Second)
-
-	pod, err := client.CoreV1().Pods("default").Get(ctx, "pod1", metav1.GetOptions{})
-	if err != nil {
-		return fmt.Errorf("get pod: %w", err)
+	timeout := time.After(10 * time.Second)
+	ticker := time.Tick(1 * time.Second)
+	pod1Scheduled := false
+	pod8Scheduled := false
+	for {
+		if pod1Scheduled && pod8Scheduled {
+			return nil
+		}
+		select {
+		case <-timeout:
+			klog.Infof("scenario: Timeout pod1: %t pod8: %t\n", pod1Scheduled, pod8Scheduled)
+			return nil
+		case <-ticker:
+			if !pod1Scheduled {
+				pod, err := client.CoreV1().Pods("default").Get(ctx, "pod1", metav1.GetOptions{})
+				if err != nil {
+					return fmt.Errorf("get pod: %w", err)
+				}
+				if pod.Spec.NodeName != "" {
+					klog.Info("scenario: pod1 is bound to " + pod.Spec.NodeName)
+					pod1Scheduled = true
+				}
+			}
+			if !pod8Scheduled {
+				pod, err := client.CoreV1().Pods("default").Get(ctx, "pod8", metav1.GetOptions{})
+				if err != nil {
+					return fmt.Errorf("get pod: %w", err)
+				}
+				if pod.Spec.NodeName != "" {
+					klog.Info("scenario: pod8 is bound to " + pod.Spec.NodeName)
+					pod8Scheduled = true
+				}
+			}
+		}
 	}
-
-	klog.Info("scenario: pod1 is bound to " + pod.Spec.NodeName)
-
-	pod, err = client.CoreV1().Pods("default").Get(ctx, "pod8", metav1.GetOptions{})
-	if err != nil {
-		return fmt.Errorf("get pod: %w", err)
-	}
-
-	klog.Info("scenario: pod8 is bound to " + pod.Spec.NodeName)
-
-	return nil
 }

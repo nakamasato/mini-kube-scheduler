@@ -3,6 +3,7 @@
 What this repo does are:
 - Study kubernetes scheduler following [自作して学ぶKubernetes Scheduler](https://engineering.mercari.com/blog/entry/20211220-create-your-kube-scheduler/) with https://github.com/sanposhiho/mini-kube-scheduler.
 - Simplify the original repo https://github.com/sanposhiho/mini-kube-scheduler
+- Implement ToDo in https://github.com/sanposhiho/mini-kube-scheduler.
 
 ## Versions
 
@@ -35,13 +36,14 @@ Files:
 1. `scheduler`: Scheduler service to manage `minisched`.
 
 ## Steps
-1. [Initial Random Scheduler](https://github.com/nakamasato/mini-kube-scheduler/tree/01-initial-random-scheduler/01-initial-random-scheduler.md)
-1. [Filter Plugins](https://github.com/nakamasato/mini-kube-scheduler/tree/02-filter-plugins/02-filter-plugins.md)
-1. [Score Plugins](https://github.com/nakamasato/mini-kube-scheduler/tree/03-score-plugins/03-score-plugins.md)
-1. [PreScore Plugins](https://github.com/nakamasato/mini-kube-scheduler/tree/04-prescore-plugins/04-prescore-plugins.md)
-1. [Permit Plugins](https://github.com/nakamasato/mini-kube-scheduler/tree/05-permit-plugins/05-permit-plugins.md)
-1. [Scheduling Queue](https://github.com/nakamasato/mini-kube-scheduler/tree/06-scheduling-queue/06-scheduling-queue.md)
-1. [Event Handler](https://github.com/nakamasato/mini-kube-scheduler/tree/07-event-handler/07-event-handler.md)
+1. [Initial Random Scheduler](https://github.com/nakamasato/mini-kube-scheduler/tree/01-initial-random-scheduler/01-initial-random-scheduler.md): Randomly schedule a Pod to available nodes.
+1. [Filter Plugins](https://github.com/nakamasato/mini-kube-scheduler/tree/02-filter-plugins/02-filter-plugins.md): Use `NodeUnschedulable` plugin.
+1. [Score Plugins](https://github.com/nakamasato/mini-kube-scheduler/tree/03-score-plugins/03-score-plugins.md): Schedule based on the score of each node. (`NodeName`)
+1. [PreScore Plugins](https://github.com/nakamasato/mini-kube-scheduler/tree/04-prescore-plugins/04-prescore-plugins.md): Move common logic in the ScorePlugin to PreScorePlugin to reuse it.
+1. [Permit Plugins](https://github.com/nakamasato/mini-kube-scheduler/tree/05-permit-plugins/05-permit-plugins.md): Delay n seconds based on the name of the node.
+1. [Scheduling Queue](https://github.com/nakamasato/mini-kube-scheduler/tree/06-scheduling-queue/06-scheduling-queue.md): Make the simple queue closer to the one used in `kube-scheduler`. (`podBackoffQ` and `UnschedulableQ` + Logic to put back a queue)
+1. [Event Handler](https://github.com/nakamasato/mini-kube-scheduler/tree/07-event-handler/07-event-handler.md): Trigger `MoveAllToActiveOrBackoffQueue` when a new node is added.
+1. [Flush Queue](https://github.com/nakamasato/mini-kube-scheduler/tree/08-flush-queue/08-flush-queue.md)
 
 ## Tips
 
