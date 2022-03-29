@@ -14,17 +14,17 @@ What this repo does are:
 
 ## Components
 
-- `Scheduler`
-    - `SchedulingQueue`
-    - `client`
+- `Scheduler`: Custom Scheduler (minisched)
+    - `SchedulingQueue`: Store Pods to schedule to a node.
+        - `activeQ`: A queue to store Pods to start scheduling.
+        - `unschedulableQ`: A queue to store Pods that are failed to schedule (with the plugins that made it unschedulable.)
+        - `podBackoffQ`: A queue to store Pods that are in back-off state.
+    - `client`: Used to update Pod to bind it to a node.
 - `Informer` with `Handler` (`Scheduler.addPodToSchedulingQueue()`) + `FilterFunc`
 - `Service`:
     - Initialize Scheduler and set the event handler for informer with `New()`
     - Call `Scheduler.Run()` to start `Scheduler`.
-- `SchedulingQueue`: Store Pods to schedule to a node.
-    - `activeQ`: A queue to store Pods to start scheduling.
-    - `unschedulableQ`: A queue to store Pods that are failed to schedule (with the plugins that made it unschedulable.)
-    - `podBackoffQ`: A queue to store Pods that are in back-off state.
+- `Plugin`: Implement logic for extension points in each scheduling context and called in the scheduler.
 
 Diagram:
 
