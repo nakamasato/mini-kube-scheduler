@@ -1,10 +1,11 @@
 # Mini Kube Scheduler
 
 What this repo does are:
-- Study kubernetes scheduler following [自作して学ぶKubernetes Scheduler](https://engineering.mercari.com/blog/entry/20211220-create-your-kube-scheduler/) with https://github.com/sanposhiho/mini-kube-scheduler.
-- Simplify the original repo https://github.com/sanposhiho/mini-kube-scheduler
-- Implement ToDo in https://github.com/sanposhiho/mini-kube-scheduler.
-
+- Study kubernetes scheduler following [自作して学ぶKubernetes Scheduler](https://engineering.mercari.com/blog/entry/20211220-create-your-kube-scheduler/) with [sanposhiho/mini-kube-scheduler](https://github.com/sanposhiho/mini-kube-scheduler).
+    - Simplify the original repo https://github.com/sanposhiho/mini-kube-scheduler
+    - Implement [ToDos in sanposhiho/mini-kube-scheduler](https://github.com/sanposhiho/mini-kube-scheduler/blob/b5ca1625d39d4c98e67fab3b052366ce01047234/minisched/queue/queue.go#L135-L146) .
+- Gain basic understanding of [Scheduling Framework](https://kubernetes.io/docs/concepts/scheduling-eviction/scheduling-framework/) by hands-on.
+    ![](https://raw.githubusercontent.com/kubernetes/website/main/static/images/docs/scheduling-framework-extensions.png)
 ## Versions
 
 - Go: 1.17
@@ -20,6 +21,10 @@ What this repo does are:
 - `Service`:
     - Initialize Scheduler and set the event handler for informer with `New()`
     - Call `Scheduler.Run()` to start `Scheduler`.
+- `SchedulingQueue`: Store Pods to schedule to a node.
+    - `activeQ`: A queue to store Pods to start scheduling.
+    - `unschedulableQ`: A queue to store Pods that are failed to schedule (with the plugins that made it unschedulable.)
+    - `podBackoffQ`: A queue to store Pods that are in back-off state.
 
 Diagram:
 
@@ -45,33 +50,8 @@ Files:
 1. [Event Handler](https://github.com/nakamasato/mini-kube-scheduler/tree/07-event-handler/07-event-handler.md): Trigger `MoveAllToActiveOrBackoffQueue` when a new node is added.
 1. [Flush Queue](https://github.com/nakamasato/mini-kube-scheduler/tree/08-flush-queue/08-flush-queue.md): Flush `podBackoffQ` and `UnschedulableQ` periodically.
 
-## Tips
+Tips: [Development Tips](DEVELOPMENT.md)
 
-### kube-apiserver
-
-Use https://github.com/kubernetes/kubernetes to generate [k8sapiserver/openapizz_generated.openapi.go](k8sapiserver/openapizz_generated.openapi.go).
-
-### Go module error
-
-If you get [unknown revision v0.0.0' errors, seemingly due to 'require k8s.io/foo v0.0.0' #79384](https://github.com/kubernetes/kubernetes/issues/79384#issuecomment-521493597), run the command:
-
-```
-./update_go_mod.sh <k8s_version> # e.g. 1.23.4
-```
-
-### Plugins
-
-You can use [default plugins](https://kubernetes.io/docs/reference/scheduling/config/#scheduling-plugins) or implement your own plugins
-
-### Use pointer of for range loop variable in Go
-
-About the redeclaration of a variable in a for loop:
-
-```go
-n := n
-```
-
-[Use Pointer of for Range Loop Variable in Go](https://medium.com/swlh/use-pointer-of-for-range-loop-variable-in-go-3d3481f7ffc9)
 ## References
 1. kubernetes.io/docs
     1. https://kubernetes.io/docs/concepts/scheduling-eviction/scheduling-framework
@@ -79,6 +59,7 @@ n := n
 1. github.com
     1. https://github.com/sanposhiho/mini-kube-scheduler
     1. https://github.com/draios/kubernetes-scheduler
+    1. https://github.com/kubernetes/kubernetes/blob/v1.23.4/pkg/scheduler/internal/queue/scheduling_queue.go
     1. https://github.com/kubernetes/enhancements/tree/master/keps/sig-scheduling/624-scheduling-framework
     1. https://github.com/kubernetes-sigs/kube-scheduler-simulator
     1. https://github.com/kubernetes-sigs/scheduler-plugins
